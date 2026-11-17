@@ -3,7 +3,8 @@ import {
   UsageLimitSourceError,
   type UsageLimitSourceConsumeResetCreditInput,
   type ProviderConsumeResetCreditResult,
-  type ProviderDriverKind,
+  ProviderDriverKind,
+  type ProviderInstanceId,
   type ServerSettings,
   UsageLimitSourceConfig,
   settingsSecretLiteral,
@@ -259,11 +260,42 @@ export function hubPoolResetAt(
   return earliest === null ? null : DateTime.formatIso(DateTime.makeUnsafe(earliest));
 }
 
+/** A connection must resolve to one known subscription before its thread can be scheduled. */
+export function openDesignResetAt(
+  sources: ReadonlyArray<UsageLimitSourceSnapshot>,
+  expectedSources: number,
+  now: number,
+): string | null {
+  if (
+    expectedSources === 0 ||
+    sources.length !== expectedSources ||
+    sources.some(
+      (source) => source.kind !== "opendesign" || source.error || source.accounts.length !== 1,
+    )
+  )
+    return null;
+  const accounts = sources.flatMap((source) => source.accounts);
+  if (new Set(accounts.map((account) => `${account.workspaceId}:${account.id}`)).size !== 1)
+    return null;
+  const account = [...accounts].sort(
+    (a, b) => Date.parse(b.usageLimits.checkedAt) - Date.parse(a.usageLimits.checkedAt),
+  )[0];
+  const first = sources[0];
+  if (!account || !first) return null;
+  return hubPoolResetAt(
+    [{ ...first, accounts: [account] }],
+    ProviderDriverKind.make("opendesign"),
+    null,
+    now,
+  );
+}
+
 export class UsageLimitResetFallback extends Context.Reference<{
   readonly resetAt: (
     driver: ProviderDriverKind,
-    endpoint: string,
+    endpoint: string | undefined,
     model: string | null,
+    instanceId?: ProviderInstanceId,
   ) => Effect.Effect<string | null>;
 }>("t3/usage/UsageLimitResetFallback", {
   defaultValue: () => ({ resetAt: () => Effect.succeed(null) }),
@@ -273,22 +305,56 @@ export const layerResetFallback = Layer.effect(
   UsageLimitResetFallback,
   Effect.gen(function* () {
     const sources = yield* UsageLimitSources;
+    const settings = yield* Settings.ServerSettingsService;
     return {
-      resetAt: Effect.fn("UsageLimitResetFallback.resetAt")(function* (driver, endpoint, model) {
-        // Only the hub at the instance's endpoint serves its turns.
-        const atEndpoint = Effect.map(sources.current, (current) =>
-          current.filter((source) => source.origin === endpoint),
-        );
-        if ((yield* atEndpoint).length === 0) return null;
-        // The pool usually ran out after the last poll, so the cached accounts still show room.
-        yield* sources.refresh.pipe(Effect.timeout("5 seconds"), Effect.ignore);
-        return hubPoolResetAt(
-          yield* atEndpoint,
-          driver,
-          model,
-          DateTime.toEpochMillis(yield* DateTime.now),
-        );
-      }),
+      resetAt: Effect.fn("UsageLimitResetFallback.resetAt")(
+        function* (driver, endpoint, model, instanceId) {
+          if (driver === "opencode" && instanceId && model?.includes("/")) {
+            const bindings = settings.getSettings.pipe(
+              Effect.map((current) =>
+                Object.entries(current.usageLimitSources)
+                  .filter(
+                    ([, config]) =>
+                      config.enabled &&
+                      config.kind === "opendesign" &&
+                      config.opencodeInstanceId === instanceId &&
+                      config.opencodeProviderId === model.slice(0, model.indexOf("/")),
+                  )
+                  .map(([id]) => id),
+              ),
+            );
+            if ((yield* bindings).length > 0) {
+              const refreshed = yield* sources.refresh.pipe(
+                Effect.timeout("25 seconds"),
+                Effect.result,
+              );
+              if (refreshed._tag === "Failure") return null;
+              const ids = yield* bindings;
+              const current = (yield* sources.current).filter((source) => ids.includes(source.id));
+              return openDesignResetAt(
+                current,
+                ids.length,
+                DateTime.toEpochMillis(yield* DateTime.now),
+              );
+            }
+          }
+          if (endpoint === undefined) return null;
+          // Only the hub at the instance's endpoint serves its turns.
+          const atEndpoint = Effect.map(sources.current, (current) =>
+            current.filter((source) => source.origin === endpoint),
+          );
+          if ((yield* atEndpoint).length === 0) return null;
+          // The pool usually ran out after the last poll, so the cached accounts still show room.
+          yield* sources.refresh.pipe(Effect.timeout("5 seconds"), Effect.ignore);
+          return hubPoolResetAt(
+            yield* atEndpoint,
+            driver,
+            model,
+            DateTime.toEpochMillis(yield* DateTime.now),
+          );
+        },
+        Effect.orElseSucceed(() => null),
+      ),
     };
   }),
 );

@@ -935,6 +935,8 @@ export const UsageLimitSourceConfig = Schema.Struct({
   kind: Schema.Literals(["cliproxy", "opendesign"]),
   cliPath: Schema.optional(TrimmedNonEmptyString),
   amrHome: Schema.optional(TrimmedNonEmptyString),
+  opencodeInstanceId: Schema.optional(ProviderInstanceId),
+  opencodeProviderId: Schema.optional(TrimmedNonEmptyString),
   workspaceId: Schema.optional(TrimmedNonEmptyString),
   label: Schema.optional(TrimmedNonEmptyString),
   url: TrimmedNonEmptyString,

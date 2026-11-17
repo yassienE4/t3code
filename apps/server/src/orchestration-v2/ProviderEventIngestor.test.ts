@@ -234,22 +234,32 @@ function threadCreatedEvent(
 
 const layer = it.layer(layerTest);
 
-it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the snapshot", () =>
+it.effect.each([
+  { driver: "cursor", endpoint: "http://hub.test:8317", failureClass: "usage_limit", code: null },
+  { driver: "opencode", endpoint: undefined, failureClass: "usage_limit", code: null },
+  {
+    driver: "opencode",
+    endpoint: undefined,
+    failureClass: "provider_error",
+    code: "provider.quota",
+  },
+  { driver: "opencode", endpoint: undefined, failureClass: "provider_error", code: "APIError" },
+] as const)("backfills $driver $code quota reset and refreshes the snapshot", (scenario) =>
   Effect.gen(function* () {
     const refreshed = yield* Deferred.make<void>();
     const adapter = yield* ProviderAdapter.ProviderAdapterV2.pipe(
       Effect.provide(
         Layer.mock(ProviderAdapter.ProviderAdapterV2)({
-          instanceId: ProviderInstanceId.make("cursor-work"),
-          driver: ProviderDriverKind.make("cursor"),
+          instanceId: ProviderInstanceId.make(`${scenario.driver}-work`),
+          driver: ProviderDriverKind.make(scenario.driver),
         }),
       ),
     );
     const instance: ProviderInstance = {
-      instanceId: ProviderInstanceId.make("cursor-work"),
-      driverKind: ProviderDriverKind.make("cursor"),
+      instanceId: ProviderInstanceId.make(`${scenario.driver}-work`),
+      driverKind: ProviderDriverKind.make(scenario.driver),
       continuationIdentity: {
-        driverKind: ProviderDriverKind.make("cursor"),
+        driverKind: ProviderDriverKind.make(scenario.driver),
         continuationKey: "work",
       },
       enabled: true,
@@ -266,7 +276,7 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
       snapshot: {
         refreshUsage: Deferred.succeed(refreshed, undefined).pipe(Effect.asVoid),
         getSnapshot: Effect.succeed({
-          auth: { status: "authenticated", endpoint: "http://hub.test:8317" },
+          auth: { status: "authenticated", endpoint: scenario.endpoint },
         } as ServerProvider),
         refresh: Effect.die("unused"),
         resolveMaintenance: () => Effect.die("unused"),
@@ -275,7 +285,7 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
       },
     };
     const lookups: ProviderInstanceId[] = [];
-    const hubLookups: Array<[string, string, string | null]> = [];
+    const hubLookups: Array<[string, string | undefined, string | null]> = [];
     const instances = Layer.mock(ProviderInstanceRegistry.ProviderInstanceRegistry)({
       getInstance: (id) =>
         Effect.sync(() => {
@@ -298,7 +308,7 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
         providerInstanceId: instance.instanceId,
         threadId: threadEvent.threadId,
       };
-      for (const failureClass of ["validation_error", "usage_limit"] as const) {
+      for (const failureClass of ["validation_error", scenario.failureClass] as const) {
         const stored = yield* ingestor.ingestNormalized({
           ...input,
           event: {
@@ -317,7 +327,8 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
             status: "failed",
             failure: makeProviderFailure({
               class: failureClass,
-              message: "Provider rejected turn.",
+              message: "402 quota exhausted",
+              code: failureClass === "validation_error" ? null : scenario.code,
             }),
             threadDisposition: "reusable",
           },
@@ -335,7 +346,7 @@ it.effect("takes a hub's reset for an unreset usage_limit, then refreshes the sn
         }
       }
       assert.deepEqual(lookups, [instance.instanceId, instance.instanceId]);
-      assert.deepEqual(hubLookups, [["cursor", "http://hub.test:8317", "gpt-5.4"]]);
+      assert.deepEqual(hubLookups, [[scenario.driver, scenario.endpoint, "gpt-5.4"]]);
       yield* Deferred.await(refreshed);
     }).pipe(
       Effect.provide(makeLayerTest(layerTestEventSink, instances)),

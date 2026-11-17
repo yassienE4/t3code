@@ -1,5 +1,11 @@
+import * as Schema from "effect/Schema";
 import { T } from "gt-react";
-import { type EnvironmentId, type UnifiedSettings, UsageLimitSourceId } from "@t3tools/contracts";
+import {
+  type EnvironmentId,
+  type UnifiedSettings,
+  UsageLimitSourceId,
+  ProviderInstanceId,
+} from "@t3tools/contracts";
 import { useId, useState } from "react";
 import { useUpdateEnvironmentSettings } from "../../hooks/useSettings";
 import { Button } from "../ui/button";
@@ -14,6 +20,8 @@ import {
 } from "../ui/dialog";
 import { Input } from "../ui/input";
 import { Label } from "../ui/label";
+
+const isInstanceId = Schema.is(ProviderInstanceId);
 
 export function AddOpenDesignUsageDialog({
   environmentId,
@@ -30,8 +38,14 @@ export function AddOpenDesignUsageDialog({
   const [cliPath, setCliPath] = useState("vela");
   const [amrHome, setAmrHome] = useState("~/.amr");
   const [workspaceId, setWorkspaceId] = useState("");
+  const [instanceId, setInstanceId] = useState("");
+  const [providerId, setProviderId] = useState("");
+  const validBinding =
+    (!instanceId.trim() && !providerId.trim()) ||
+    (isInstanceId(instanceId.trim()) && !!providerId.trim() && !providerId.includes("/"));
   const save = () => {
-    if (!label.trim() || !cliPath.trim() || !amrHome.trim() || !workspaceId.trim()) return;
+    if (!validBinding || !label.trim() || !cliPath.trim() || !amrHome.trim() || !workspaceId.trim())
+      return;
     let id = "opendesign";
     for (let suffix = 2; id in sources; suffix += 1) id = `opendesign-${suffix}`;
     updateSettings({
@@ -42,6 +56,12 @@ export function AddOpenDesignUsageDialog({
           cliPath: cliPath.trim(),
           amrHome: amrHome.trim(),
           workspaceId: workspaceId.trim(),
+          ...(instanceId.trim() && providerId.trim()
+            ? {
+                opencodeInstanceId: ProviderInstanceId.make(instanceId.trim()),
+                opencodeProviderId: providerId.trim(),
+              }
+            : {}),
           url: "https://open-design.ai/cloud/dashboard",
           managementKey: "",
           enabled: true,
@@ -118,6 +138,31 @@ export function AddOpenDesignUsageDialog({
                 onChange={(event) => setWorkspaceId(event.target.value)}
               />
             </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${formId}-instance`}>
+                <T>OpenCode instance ID (optional)</T>
+              </Label>
+              <Input
+                id={`${formId}-instance`}
+                value={instanceId}
+                onChange={(event) => setInstanceId(event.target.value)}
+                placeholder="opencode"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={`${formId}-provider`}>
+                <T>OpenCode model provider ID (optional)</T>
+              </Label>
+              <Input
+                id={`${formId}-provider`}
+                value={providerId}
+                onChange={(event) => setProviderId(event.target.value)}
+                placeholder="opendesign"
+              />
+              <p className="text-xs text-muted-foreground">
+                <T>Fill both IDs to enable resume after quota resets for this subscription.</T>
+              </p>
+            </div>
           </form>
         </DialogPanel>
         <DialogFooter variant="bare">
@@ -127,7 +172,10 @@ export function AddOpenDesignUsageDialog({
           <Button
             type="submit"
             form={formId}
-            disabled={![label, cliPath, amrHome, workspaceId].every((value) => value.trim())}
+            disabled={
+              !validBinding ||
+              ![label, cliPath, amrHome, workspaceId].every((value) => value.trim())
+            }
           >
             <T>Add subscription</T>
           </Button>

@@ -201,6 +201,15 @@ weekly allowance also makes that account's session unavailable until it refills.
 Disable or remove an entry in Usage providers to stop tracking it; removing it
 keeps the official CLI's login files.
 
+To enable **Resume when usage is back** for OpenCode, fill both optional OpenCode
+IDs when adding the subscription: the T3 OpenCode instance ID and the model
+provider ID (the part before `/` in its model ID). Each connection must identify
+one subscription. T3 refreshes that account's quota when a turn hits a limit and
+uses the latest reset among its exhausted windows. The thread then offers the
+same resume and snooze controls as other providers. Unavailable or ambiguous
+accounts have no scheduled resume; retry those manually. For an existing entry,
+remove and re-add it with the connection IDs.
+
 Quota tracking does not configure OpenCode's model API keys or automatically
 switch subscriptions. Normal OpenDesign model API keys cannot read this billing
 data; the CLI must have an authenticated account login. Login directories and

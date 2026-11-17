@@ -3,6 +3,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import {
   ProviderDriverKind,
+  ProviderInstanceId,
   SecretProviderId,
   ServerConfigStreamEvent,
   UsageLimitSourceId,
@@ -291,6 +292,7 @@ it.effect("the reset fallback refreshes its hub, and a stalled hub cannot hold t
       ),
       Effect.provide(
         UsageLimitSources.layerResetFallback.pipe(
+          Layer.provide(ServerSettings.layerTest()),
           Layer.provide(
             Layer.mock(UsageLimitSources.UsageLimitSources)({
               current: Effect.sync(() => current),
@@ -307,5 +309,122 @@ it.effect("the reset fallback refreshes its hub, and a stalled hub cannot hold t
     const stalled = yield* Effect.forkChild(lookup);
     yield* TestClock.adjust("5 seconds");
     expect(yield* Fiber.join(stalled)).toBeNull();
+  }),
+);
+
+const openDesignSource = (
+  id: string,
+  windows: ReadonlyArray<ServerProviderUsageWindow>,
+): UsageLimitSourceSnapshot => ({
+  ...hub([{ driver: "opendesign", windows }]),
+  id: UsageLimitSourceId.make(id),
+  kind: "opendesign",
+});
+
+it("only resumes a known subscription after every exhausted window resets", () => {
+  const source = openDesignSource("personal", [spent("session", 1), spent("weekly", 3)]);
+  expect(UsageLimitSources.openDesignResetAt([source], 1, NOW)).toBe(at(3));
+  expect(
+    UsageLimitSources.openDesignResetAt(
+      [
+        {
+          ...source,
+          accounts: source.accounts.map((a) => ({
+            ...a,
+            usageLimits: { ...a.usageLimits, windows: [{ ...spent("weekly", 3), usedPercent: 0 }] },
+          })),
+        },
+      ],
+      1,
+      NOW,
+    ),
+  ).toBeNull();
+  expect(
+    UsageLimitSources.openDesignResetAt([{ ...source, error: "not signed in" }], 1, NOW),
+  ).toBeNull();
+  expect(UsageLimitSources.openDesignResetAt([], 1, NOW)).toBeNull();
+  expect(UsageLimitSources.openDesignResetAt([source], 1, Date.parse(at(4)))).toBeNull();
+  const other = {
+    ...source,
+    id: UsageLimitSourceId.make("work"),
+    accounts: source.accounts.map((a) => ({ ...a, id: "different-member" })),
+  };
+  expect(UsageLimitSources.openDesignResetAt([source, other], 2, NOW)).toBeNull();
+  expect(
+    UsageLimitSources.openDesignResetAt(
+      [source, { ...source, id: UsageLimitSourceId.make("duplicate") }],
+      2,
+      NOW,
+    ),
+  ).toBe(at(3));
+});
+
+it.effect("uses the failed OpenCode connection's account without needing an auth endpoint", () =>
+  Effect.gen(function* () {
+    yield* TestClock.setTime(NOW);
+    const personal = openDesignSource("personal", [spent("weekly", 1)]);
+    const work = openDesignSource("work", [spent("weekly", 3)]);
+    const instance = ProviderInstanceId.make("opencode-work");
+    let refreshed = false;
+    const reset = Effect.gen(function* () {
+      const fallback = yield* UsageLimitSources.UsageLimitResetFallback;
+      expect(
+        yield* fallback.resetAt(
+          ProviderDriverKind.make("opencode"),
+          undefined,
+          "personal/deepseek-flash",
+          ProviderInstanceId.make("another-instance"),
+        ),
+      ).toBeNull();
+      expect(
+        yield* fallback.resetAt(
+          ProviderDriverKind.make("opencode"),
+          undefined,
+          "unbound/deepseek-flash",
+          instance,
+        ),
+      ).toBeNull();
+      expect(refreshed).toBe(false);
+      return yield* fallback.resetAt(
+        ProviderDriverKind.make("opencode"),
+        undefined,
+        "work/deepseek-flash",
+        instance,
+      );
+    });
+    const result = yield* reset.pipe(
+      Effect.provide(
+        UsageLimitSources.layerResetFallback.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              ServerSettings.layerTest({
+                usageLimitSources: {
+                  [UsageLimitSourceId.make("personal")]: {
+                    kind: "opendesign",
+                    url: "https://open-design.ai",
+                    opencodeInstanceId: instance,
+                    opencodeProviderId: "personal",
+                  },
+                  [UsageLimitSourceId.make("work")]: {
+                    kind: "opendesign",
+                    url: "https://open-design.ai",
+                    opencodeInstanceId: instance,
+                    opencodeProviderId: "work",
+                  },
+                },
+              }),
+              Layer.mock(UsageLimitSources.UsageLimitSources)({
+                current: Effect.succeed([personal, work]),
+                refresh: Effect.sync(() => {
+                  refreshed = true;
+                }),
+              }),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(refreshed).toBe(true);
+    expect(result).toBe(at(3));
   }),
 );
