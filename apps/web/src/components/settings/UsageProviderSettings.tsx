@@ -1,3 +1,4 @@
+import { T } from "gt-react";
 import type { EnvironmentId, UnifiedSettings } from "@t3tools/contracts";
 import { PlusIcon } from "lucide-react";
 import { useState } from "react";
@@ -13,6 +14,7 @@ import {
   AlertDialogTitle,
 } from "../ui/alert-dialog";
 import { Button } from "../ui/button";
+import { AddOpenDesignUsageDialog } from "./AddOpenDesignUsageDialog";
 import { AddUsageLimitSourceDialog } from "./AddUsageLimitSourceDialog";
 import { searchableSetting } from "./settingsSearch";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
@@ -29,6 +31,7 @@ export function UsageProviderSettings({
   readonly readOnly: boolean;
 }) {
   const updateSettings = useUpdateEnvironmentSettings(environmentId);
+  const [addingOpenDesign, setAddingOpenDesign] = useState(false);
   const [adding, setAdding] = useState(false);
   const entries = Object.entries(sources);
 
@@ -38,15 +41,20 @@ export function UsageProviderSettings({
         {...searchableSetting("usage-providers")}
         headerAction={
           !readOnly ? (
-            <Button size="xs" variant="outline" onClick={() => setAdding(true)}>
-              <PlusIcon className="size-3" aria-hidden />
-              Add hub
-            </Button>
+            <div className="flex gap-2">
+              <Button size="xs" variant="outline" onClick={() => setAddingOpenDesign(true)}>
+                <T>Add OpenDesign</T>
+              </Button>
+              <Button size="xs" variant="outline" onClick={() => setAdding(true)}>
+                <PlusIcon className="size-3" aria-hidden />
+                Add hub
+              </Button>
+            </div>
           ) : null
         }
       >
         {entries.length === 0 ? (
-          <SettingsRow title="No hubs configured." />
+          <SettingsRow title={<T>No usage sources configured.</T>} />
         ) : (
           entries.map(([id, source]) => {
             const label = source.label?.trim() || source.url;
@@ -56,16 +64,34 @@ export function UsageProviderSettings({
                 title={label}
                 description={
                   <span className="break-all">
-                    CLI Proxy{source.enabled ? "" : " · Disabled"}
-                    {label !== source.url ? ` · ${source.url}` : ""}
+                    {source.kind === "opendesign" ? "OpenDesign" : "CLI Proxy"}
+                    {source.enabled ? "" : " · Disabled"}
+                    {source.kind === "opendesign"
+                      ? ` · ${source.amrHome ?? "~/.amr"}`
+                      : label !== source.url
+                        ? ` · ${source.url}`
+                        : ""}
                   </span>
                 }
                 control={
                   !readOnly ? (
-                    <RemoveUsageProviderButton
-                      label={label}
-                      onConfirm={() => updateSettings({ usageLimitSources: { [id]: null } })}
-                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() =>
+                          updateSettings({
+                            usageLimitSources: { [id]: { ...source, enabled: !source.enabled } },
+                          })
+                        }
+                      >
+                        {source.enabled ? <T>Disable</T> : <T>Enable</T>}
+                      </Button>
+                      <RemoveUsageProviderButton
+                        label={label}
+                        onConfirm={() => updateSettings({ usageLimitSources: { [id]: null } })}
+                      />
+                    </div>
                   ) : null
                 }
               />
@@ -73,6 +99,13 @@ export function UsageProviderSettings({
           })
         )}
       </SettingsSection>
+      {addingOpenDesign && !readOnly ? (
+        <AddOpenDesignUsageDialog
+          environmentId={environmentId}
+          sources={sources}
+          onOpenChange={setAddingOpenDesign}
+        />
+      ) : null}
       {adding && !readOnly ? (
         <AddUsageLimitSourceDialog
           open
@@ -104,9 +137,10 @@ function RemoveUsageProviderButton({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove {label}?</AlertDialogTitle>
             <AlertDialogDescription>
-              The hub's management key is deleted from this server. Its accounts leave the Limits
-              view; the hub itself is untouched. Add it again with the URL and key to bring them
-              back.
+              <T>
+                This source leaves the Limits view. OpenDesign login files remain on the server; hub
+                management keys stored by T3 are deleted.
+              </T>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -118,7 +152,7 @@ function RemoveUsageProviderButton({
                 onConfirm();
               }}
             >
-              Remove hub
+              <T>Remove source</T>
             </Button>
           </AlertDialogFooter>
         </AlertDialogPopup>

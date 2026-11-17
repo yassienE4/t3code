@@ -50,6 +50,7 @@ const PACE: Record<LimitPace, { readonly label: string; readonly icon: typeof Ga
 };
 
 export function barColor(driver: ServerProvider["driver"]): string {
+  if (driver === "opendesign") return "#22a66f";
   const presentation = Object.values(PROVIDER_PRESENTATION).find(
     (entry) => entry.driverKind === driver,
   );

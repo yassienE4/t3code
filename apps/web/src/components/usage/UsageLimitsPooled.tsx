@@ -587,7 +587,10 @@ function PoolWindowCard({
 
 function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {
   const color = barColor(pool.driver);
-  const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);
+  const label =
+    pool.driver === "opendesign"
+      ? "OpenDesign"
+      : (providerClients.get(pool.driver)?.label ?? String(pool.driver));
   const windows = displayLimitWindows(pool);
   return (
     <section className="flex flex-col gap-3">

@@ -402,7 +402,12 @@ export function collectLimitAccounts(presentations: LimitPresentations): readonl
         merge(resolved ?? key, {
           key,
           driver: account.driver,
-          displayName: account.email ? null : hubAccountName(account),
+          displayName:
+            source.kind === "opendesign"
+              ? source.label
+              : account.email
+                ? null
+                : hubAccountName(account),
           email: account.email,
           plan: account.plan,
           accentColor: undefined,
@@ -595,7 +600,8 @@ function poolMember(account: LimitAccount, reported: ServerProviderUsageWindow, 
             window.usedPercent >= 100 &&
             (account.driver === "claudeAgent"
               ? window.id === "seven_day"
-              : account.driver === "codex" && window.kind === "weekly"),
+              : (account.driver === "codex" || account.driver === "opendesign") &&
+                window.kind === "weekly"),
         )
       : undefined;
   if (!spentWeekly) return { account, window: reported, refillPercent: reported.usedPercent };
@@ -651,7 +657,7 @@ function poolWindows(accounts: readonly LimitAccount[], now: number): readonly L
     const first = members[0]!.window;
     const id = members[0]!.account.driver === "codex" ? key : first.id;
     // One unknown plan makes the pool incomparable by plan, so every member then counts once.
-    const capacities = members.map((m) => planCapacity(m.account, first.kind));
+    const capacities = members.map((m) => m.window.capacity ?? planCapacity(m.account, first.kind));
     const weights = capacities.every((capacity) => capacity !== undefined)
       ? capacities
       : members.map(() => 1);
@@ -843,7 +849,7 @@ export function hasProviderUsageLimits(
     sources.some(
       (source) =>
         source.accounts.some((account) => account.driver === driver) ||
-        (source.error !== undefined && source.accounts.length === 0),
+        (source.kind === "cliproxy" && source.error !== undefined && source.accounts.length === 0),
     )
   );
 }
@@ -855,7 +861,7 @@ export function sameUsageLimitCommandCoverage(
   const coverage = (sources: UsageLimitSourceSnapshots) =>
     new Set(
       sources.flatMap((source) =>
-        source.error !== undefined && source.accounts.length === 0
+        source.kind === "cliproxy" && source.error !== undefined && source.accounts.length === 0
           ? ["*"]
           : source.accounts.map((account) => String(account.driver)),
       ),
@@ -875,7 +881,8 @@ export function withUsageLimitsCommands(
     ...sources.flatMap((source) => source.accounts.map((account) => account.driver)),
   ]);
   const unreadableSource = sources.some(
-    (source) => source.error !== undefined && source.accounts.length === 0,
+    (source) =>
+      source.kind === "cliproxy" && source.error !== undefined && source.accounts.length === 0,
   );
   return providers.map((provider) => {
     if (!unreadableSource && !supportedDrivers.has(provider.driver)) return provider;
@@ -1019,7 +1026,10 @@ export function collectProviderUsageLimits(
         limits: account.usageLimits,
       });
     }
-    if (source.error && (matching.length > 0 || source.accounts.length === 0)) {
+    if (
+      source.error &&
+      (matching.length > 0 || (source.kind === "cliproxy" && source.accounts.length === 0))
+    ) {
       notices.push(`${source.label}: ${source.error}`);
     }
   }

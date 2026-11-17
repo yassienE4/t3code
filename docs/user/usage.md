@@ -178,6 +178,34 @@ Until then it shows no limits. Readings are not kept across a server restart.
 API-key accounts may not report subscription limits. This also applies to Claude connections
 using a proxy through `ANTHROPIC_AUTH_TOKEN`.
 
+## Track OpenDesign subscriptions
+
+In **Settings → Providers → Usage providers**, choose **Add OpenDesign**. Enter an
+account label, the path to the standalone `vela` executable on that environment,
+its login directory, and its workspace ID. Open **Usage → Limits** and refresh to
+see the account's 5-hour and weekly allowances and reset times. The desktop app
+does not need to be installed or running.
+
+Sign in with the official CLI before adding the account. To use separate
+subscriptions, give each login its own absolute directory:
+
+```sh
+AMR_HOME="$HOME/.amr-personal" /path/to/vela login
+AMR_HOME="$HOME/.amr-work" /path/to/vela login
+```
+
+Add one entry for each login and workspace. T3 reads each directory independently;
+adding the same workspace member twice does not double its allowance. The pooled
+percentage weights each window by the credits its subscription allows. A spent
+weekly allowance also makes that account's session unavailable until it refills.
+Disable or remove an entry in Usage providers to stop tracking it; removing it
+keeps the official CLI's login files.
+
+Quota tracking does not configure OpenCode's model API keys or automatically
+switch subscriptions. Normal OpenDesign model API keys cannot read this billing
+data; the CLI must have an authenticated account login. Login directories and
+executables belong to the environment's server, including when connecting remotely.
+
 ## Connect a CLIProxyAPI hub
 
 To see pooled accounts, open **Settings → Providers → Usage providers → Add hub**. Choose the

@@ -238,6 +238,71 @@ describe("pools", () => {
   };
   const laptop = { entry: { target: { label: "Laptop" } } };
 
+  it("pools OpenDesign subscriptions by capacity and deduplicates repeated logins", () => {
+    const driver = ProviderDriverKind.make("opendesign");
+    const makeSource = (id: string, member: string, capacity: number, usedPercent: number) => ({
+      ...source,
+      id: UsageLimitSourceId.make(id),
+      kind: "opendesign" as const,
+      label: id,
+      accounts: [
+        {
+          id: member,
+          driver,
+          workspaceId: "workspace",
+          plan: "go",
+          usageLimits: {
+            checkedAt,
+            credentialFingerprint: member,
+            windows: [{ ...window, id: "opendesign-18000", capacity, usedPercent }],
+          },
+        },
+      ],
+    });
+    const sources = [
+      makeSource("first", "member-a", 50000, 100),
+      makeSource("second", "member-b", 150000, 0),
+      makeSource("duplicate", "member-a", 50000, 100),
+    ];
+    const accounts = collectLimitAccounts(
+      new Map([
+        [
+          EnvironmentId.make("env-a"),
+          { ...laptop, serverConfig: { providers: [], usageLimitSources: sources } },
+        ],
+      ]),
+    );
+    expect(accounts).toHaveLength(2);
+    const pool = collectLimitPools(accounts, now)[0]!;
+    expect(pool.driver).toBe("opendesign");
+    expect(pool.windows[0]?.remainingPercent).toBe(75);
+    expect(pool.accounts.map((account) => account.displayName).sort()).toEqual(["first", "second"]);
+  });
+
+  it("suppresses OpenDesign session availability until its exhausted weekly window resets", () => {
+    const account: LimitAccount = {
+      key: "open-design",
+      driver: ProviderDriverKind.make("opendesign"),
+      displayName: "Personal",
+      email: undefined,
+      plan: "go",
+      accentColor: undefined,
+      environments: [],
+      sourceLabel: "OpenDesign",
+      redeem: null,
+      limits: {
+        checkedAt,
+        windows: [
+          { ...window, id: "opendesign-18000", usedPercent: 0 },
+          { ...weekly, id: "opendesign-604800", usedPercent: 100 },
+        ],
+      },
+    };
+    const pool = collectLimitPools([account], now)[0]!;
+    expect(pool.windows[0]?.remainingPercent).toBe(0);
+    expect(pool.windows[0]?.resets[0]?.at).toBe(Date.parse(weekly.resetsAt));
+  });
+
   it("merges one account reported natively on two environments and by a hub into one entry", () => {
     const native = provider({
       driver: claude,
@@ -1762,6 +1827,11 @@ describe("sameUsageLimitCommandCoverage", () => {
     const failed = [{ ...base, accounts: [], error: "token expired" }];
     expect(sameUsageLimitCommandCoverage(empty, failed)).toBe(false);
     expect(sameUsageLimitCommandCoverage(failed, empty)).toBe(false);
+    expect(
+      sameUsageLimitCommandCoverage(empty, [
+        { ...base, kind: "opendesign", accounts: [], error: "not signed in" },
+      ]),
+    ).toBe(true);
     expect(
       sameUsageLimitCommandCoverage(failed, [{ ...base, accounts: [], error: "still down" }]),
     ).toBe(true);

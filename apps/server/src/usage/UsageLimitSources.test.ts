@@ -1,3 +1,4 @@
+import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import { expect, it } from "@effect/vitest";
 import {
@@ -57,6 +58,7 @@ it.effect("keeps malformed source URLs encodable for config subscribers", () =>
     );
   }).pipe(
     Effect.provide([
+      NodeServices.layer,
       Layer.succeed(SecretResolver.SecretResolver, {
         label: (provider) => Effect.succeed(provider),
         read: (references) => Effect.succeed(references.map(() => undefined)),
@@ -132,6 +134,7 @@ it.effect("reads a management key from its secret provider", () => {
     expect(authorizations).toEqual(["Bearer resolved-key"]);
   }).pipe(
     Effect.provide([
+      NodeServices.layer,
       ServerSettings.layerTest({
         usageLimitSources: {
           [UsageLimitSourceId.make("resolved-hub")]: {

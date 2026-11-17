@@ -4,7 +4,9 @@ export function sourceIdFromUrl(
   url: string,
   sources: UnifiedSettings["usageLimitSources"],
 ): UsageLimitSourceId {
-  const saved = Object.entries(sources).find(([, source]) => source.url === url);
+  const saved = Object.entries(sources).find(
+    ([, source]) => source.kind === "cliproxy" && source.url === url,
+  );
   if (saved) return UsageLimitSourceId.make(saved[0]);
   let host = url;
   try {

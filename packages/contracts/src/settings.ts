@@ -932,7 +932,10 @@ export const AntigravitySettings = makeProviderSettingsSchema(
 export type AntigravitySettings = typeof AntigravitySettings.Type;
 
 export const UsageLimitSourceConfig = Schema.Struct({
-  kind: Schema.Literal("cliproxy"),
+  kind: Schema.Literals(["cliproxy", "opendesign"]),
+  cliPath: Schema.optional(TrimmedNonEmptyString),
+  amrHome: Schema.optional(TrimmedNonEmptyString),
+  workspaceId: Schema.optional(TrimmedNonEmptyString),
   label: Schema.optional(TrimmedNonEmptyString),
   url: TrimmedNonEmptyString,
   managementKey: SettingsSecretValue.pipe(

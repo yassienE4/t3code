@@ -28,6 +28,7 @@ import * as SecretResolverLayer from "../secrets/SecretResolver.ts";
 import { resolveSettingsSecrets } from "../secrets/settingsSecretValue.ts";
 import * as Settings from "../serverSettings.ts";
 import { windowLimitsModel } from "../provider/claudeUsageLimits.ts";
+import { makeOpenDesignUsage } from "./openDesignUsage.ts";
 import { makeCliproxyApi } from "./cliproxyApi.ts";
 
 export class UsageLimitSources extends Context.Service<
@@ -44,6 +45,7 @@ export class UsageLimitSources extends Context.Service<
 
 function sourceLabel(id: string, config: UsageLimitSourceConfig): string {
   if (config.label) return config.label;
+  if (config.kind === "opendesign") return "OpenDesign";
   const fallback = id.trim() || "Usage limit source";
   try {
     return new URL(config.url).host || fallback;
@@ -61,6 +63,7 @@ function missingManagementKey(config: UsageLimitSourceConfig): string {
 /** @public */
 export const make = Effect.gen(function* () {
   const api = yield* makeCliproxyApi;
+  const openDesign = yield* makeOpenDesignUsage;
   const settingsService = yield* Settings.ServerSettingsService;
   const secrets = yield* SecretResolver.SecretResolver;
   const backgroundPolicy = yield* BackgroundPolicy.BackgroundPolicy;
@@ -81,6 +84,17 @@ export const make = Effect.gen(function* () {
     config: UsageLimitSourceConfig,
   ) {
     const checkedAt = DateTime.formatIso(yield* DateTime.now);
+    if (config.kind === "opendesign") {
+      const result = yield* openDesign.readAccount(config).pipe(Effect.result);
+      return {
+        id,
+        kind: config.kind,
+        label: sourceLabel(id, config),
+        checkedAt,
+        accounts: result._tag === "Success" ? [result.success] : [],
+        ...(result._tag === "Failure" ? { error: result.failure.detail } : {}),
+      };
+    }
     const url = URL.parse(config.url);
     const base = {
       id,
@@ -145,6 +159,11 @@ export const make = Effect.gen(function* () {
     if (!config?.enabled) {
       return yield* new UsageLimitSourceError({
         detail: "The usage limit source is missing or disabled.",
+      });
+    }
+    if (config.kind !== "cliproxy") {
+      return yield* new UsageLimitSourceError({
+        detail: "This source does not support reset credits.",
       });
     }
     const managementKey = yield* readManagementKey(config);

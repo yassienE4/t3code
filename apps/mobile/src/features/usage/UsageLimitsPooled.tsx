@@ -441,7 +441,9 @@ export function UsageLimitsSection({
               <View className="flex-row items-center gap-2 px-1">
                 <ProviderIcon provider={pool.driver} size={18} />
                 <Text className="text-base font-t3-medium text-foreground">
-                  {providerClients.get(pool.driver)?.label ?? pool.driver}
+                  {pool.driver === "opendesign"
+                    ? "OpenDesign"
+                    : (providerClients.get(pool.driver)?.label ?? pool.driver)}
                 </Text>
               </View>
               {windows.map((window) => {
@@ -451,7 +453,11 @@ export function UsageLimitsSection({
                   <PoolWindowCard
                     key={`${window.kind}:${window.id}`}
                     pool={window}
-                    color={colors[usageProviderKind(pool.driver) ?? "codex"]}
+                    color={
+                      pool.driver === "opendesign"
+                        ? "#22a66f"
+                        : colors[usageProviderKind(pool.driver) ?? "codex"]
+                    }
                     now={now}
                     environmentIds={
                       selectedEnvironmentIds === null ? null : [...selectedEnvironmentIds]

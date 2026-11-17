@@ -17,6 +17,8 @@ export const ServerProviderUsageWindow = Schema.Struct({
   /** When present, this limit applies only to these provider model IDs. */
   modelIds: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
   providerIds: Schema.optional(Schema.Array(TrimmedNonEmptyString)),
+  /** Relative allowance used to weight pooled accounts with different plan sizes. */
+  capacity: Schema.optional(Schema.Number.check(Schema.isGreaterThan(0))),
   usedPercent: Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
   resetsAt: Schema.optional(IsoDateTime),
   windowDurationMins: Schema.optional(NonNegativeInt),
@@ -84,7 +86,7 @@ export type UsageLimitSourceAccount = typeof UsageLimitSourceAccount.Type;
 
 export const UsageLimitSourceSnapshot = Schema.Struct({
   id: UsageLimitSourceId,
-  kind: Schema.Literal("cliproxy"),
+  kind: Schema.Literals(["cliproxy", "opendesign"]),
   label: TrimmedNonEmptyString,
   /** Origin of the hub, which also serves the agents sent through it. */
   origin: Schema.optional(TrimmedNonEmptyString),
