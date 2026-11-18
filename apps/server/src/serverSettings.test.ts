@@ -16,6 +16,7 @@ import {
   ServerSettings,
   ServerSettingsPatch,
   UsageLimitSourceId,
+  UsageLimitSourceConfig,
   type SimlockDeviceHostConfig,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
@@ -45,6 +46,35 @@ import { resolveProviderInstanceTerminalEnvironment } from "./terminal/Manager.t
 const decodeServerSettings = Schema.decodeUnknownEffect(ServerSettings);
 const decodeServerSettingsJson = Schema.decodeUnknownEffect(Schema.fromJsonString(ServerSettings));
 const decodeServerSettingsPatch = Schema.decodeUnknownEffect(ServerSettingsPatch);
+const encodeServerSettings = Schema.encodeSync(ServerSettings);
+const legacySettingsSchema = Schema.Struct({
+  ...ServerSettings.fields,
+  usageLimitSources: Schema.Record(
+    Schema.String,
+    Schema.Struct({ ...UsageLimitSourceConfig.fields, kind: Schema.Literal("cliproxy") }),
+  ),
+});
+const decodeLegacySettings = Schema.decodeUnknownSync(legacySettingsSchema);
+
+it.effect("keeps OpenDesign settings out of legacy client handshakes", () =>
+  Effect.gen(function* () {
+    const settings = yield* decodeServerSettings({
+      usageLimitSources: {
+        hub: { kind: "cliproxy", url: "https://hub.test" },
+        personal: { kind: "opendesign", url: "https://open-design.ai", workspaceId: "workspace" },
+      },
+    });
+    const legacy = ServerSettingsModule.redactServerSettingsForClient(settings, {
+      secretReferences: true,
+    });
+    assert.deepEqual(Object.keys(legacy.usageLimitSources), ["hub"]);
+    decodeLegacySettings(encodeServerSettings(legacy));
+    const capableClient = { secretReferences: true, openDesignUsageSources: true };
+    const capable = ServerSettingsModule.redactServerSettingsForClient(settings, capableClient);
+    assert.deepEqual(Object.keys(capable.usageLimitSources), ["hub", "personal"]);
+    assert.deepEqual(Object.keys(settings.usageLimitSources), ["hub", "personal"]);
+  }),
+);
 
 const layerServerSettings = (policy?: ManagedPolicyDocument) =>
   ServerSettingsModule.layer.pipe(

@@ -142,7 +142,7 @@ const normalizeServerSettings = (
 
 export function redactServerSettingsForClient(
   settings: ServerSettings,
-  client: { readonly secretReferences: boolean },
+  client: { readonly secretReferences: boolean; readonly openDesignUsageSources?: boolean },
 ): ServerSettings {
   const redacted = mapSettingsSecrets(settings, (secret) =>
     secret.sensitive
@@ -155,7 +155,18 @@ export function redactServerSettingsForClient(
     : mapSettingsSecretValues(redacted, (value) =>
         isSecretReference(value) ? SECRET_REDACTED : value,
       );
-  return { ...shaped, secretProviders: withoutUnknownSecretProviderConfigs(shaped) };
+  return {
+    ...shaped,
+    secretProviders: withoutUnknownSecretProviderConfigs(shaped),
+    // Official clients reject new source kinds while decoding their initial settings snapshot.
+    usageLimitSources: client.openDesignUsageSources
+      ? shaped.usageLimitSources
+      : Object.fromEntries(
+          Object.entries(shaped.usageLimitSources).filter(
+            ([, source]) => source.kind !== "opendesign",
+          ),
+        ),
+  };
 }
 
 /** A client shown a reference as a saved secret sends that marker back; it keeps the reference. */
