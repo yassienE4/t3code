@@ -7,8 +7,8 @@ import {
   SecretProviderId,
   ServerConfigStreamEvent,
   UsageLimitSourceId,
+  UsageLimitSourceSnapshot,
   type ServerProviderUsageWindow,
-  type UsageLimitSourceSnapshot,
 } from "@t3tools/contracts";
 import * as SecretResolver from "@t3tools/secret-provider-core/server/SecretResolver";
 import * as DateTime from "effect/DateTime";
@@ -25,6 +25,11 @@ import * as ServerSettings from "../serverSettings.ts";
 import * as UsageLimitSources from "./UsageLimitSources.ts";
 
 const encodeConfigEvent = Schema.encodeSync(ServerConfigStreamEvent);
+const decodeLegacyUsageSources = Schema.decodeUnknownSync(
+  Schema.Array(
+    Schema.Struct({ ...UsageLimitSourceSnapshot.fields, kind: Schema.Literal("cliproxy") }),
+  ),
+);
 
 it.effect("keeps malformed source URLs encodable for config subscribers", () =>
   Effect.gen(function* () {
@@ -319,6 +324,42 @@ const openDesignSource = (
   ...hub([{ driver: "opendesign", windows }]),
   id: UsageLimitSourceId.make(id),
   kind: "opendesign",
+});
+
+it("sends OpenDesign quota in the legacy source format without changing its provider identity", () => {
+  const source = {
+    ...openDesignSource("personal", [spent("session", 1), spent("weekly", 3)]),
+    label: "Deepseek 1",
+  };
+  const existingHub = hub([{ driver: "codex", windows: [spent("session", 1)] }]);
+  const sources = [existingHub, source];
+  const legacy = UsageLimitSources.usageLimitSnapshotsForClient(sources, false);
+  const event = encodeConfigEvent({
+    version: 1,
+    type: "usageLimitSourcesUpdated",
+    payload: { sources: legacy },
+  });
+  expect(() => decodeLegacyUsageSources(legacy)).not.toThrow();
+  expect(event).toMatchObject({
+    payload: {
+      sources: [
+        existingHub,
+        {
+          kind: "cliproxy",
+          label: "Deepseek 1",
+          accounts: [
+            {
+              ...source.accounts[0],
+              id: "Deepseek 1",
+              driver: "opendesign",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  expect(UsageLimitSources.usageLimitSnapshotsForClient(sources, true)).toBe(sources);
+  expect(source.kind).toBe("opendesign");
 });
 
 it("only resumes a known subscription after every exhausted window resets", () => {

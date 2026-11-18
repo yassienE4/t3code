@@ -44,6 +44,24 @@ export class UsageLimitSources extends Context.Service<
   }
 >()("t3/usage/UsageLimitSources") {}
 
+export function usageLimitSnapshotsForClient(
+  sources: ReadonlyArray<UsageLimitSourceSnapshot>,
+  openDesignUsageSources: boolean,
+): ReadonlyArray<UsageLimitSourceSnapshot> {
+  if (openDesignUsageSources) return sources;
+  // Legacy clients accept arbitrary driver names, but only the CLIProxy source kind.
+  return sources.map((source) =>
+    source.kind === "opendesign"
+      ? {
+          ...source,
+          kind: "cliproxy",
+          // Legacy clients use the account id as the label for accounts without an email.
+          accounts: source.accounts.map((account) => ({ ...account, id: source.label })),
+        }
+      : source,
+  );
+}
+
 function sourceLabel(id: string, config: UsageLimitSourceConfig): string {
   if (config.label) return config.label;
   if (config.kind === "opendesign") return "OpenDesign";

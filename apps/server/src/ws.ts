@@ -3447,7 +3447,12 @@ export const layerWsRpc = (
                       Stream.map((sources) => ({
                         version: 1 as const,
                         type: "usageLimitSourcesUpdated" as const,
-                        payload: { sources },
+                        payload: {
+                          sources: UsageLimitSources.usageLimitSnapshotsForClient(
+                            sources,
+                            settingsClient.openDesignUsageSources === true,
+                          ),
+                        },
                       })),
                     )
                   : Stream.empty;
